@@ -1,6 +1,6 @@
-# ScaleOps API
+# DeesOps API
 
-Laravel REST API for **ScaleOps**, a multi-tenant B2B project management platform. It handles authentication, tenant isolation, and role-based access control. The React frontend lives in a separate `frontend/` folder.
+Laravel REST API for **DeesOps**, a multi-tenant B2B project management platform. It handles authentication, tenant isolation, and role-based access control. The React frontend lives in a separate `frontend/` folder.
 
 ## Tech stack
 
@@ -61,7 +61,7 @@ Configure your database in `.env`:
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=scaleops
+DB_DATABASE=deesops
 DB_USERNAME=root
 DB_PASSWORD=
 
