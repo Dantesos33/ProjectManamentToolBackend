@@ -91,4 +91,22 @@ class AuthController extends Controller
     {
         return response()->json($request->user());
     }
+
+    public function todo(Request $request)
+    {
+        return response()->json([
+            [
+                'id' => 1,
+                'title' => 'Todo 1',
+                'description' => 'This is a todo',
+                'completed' => false,
+            ],
+            [
+                'id' => 2,
+                'title' => 'Todo 2',
+                'description' => 'This is another todo',
+                'completed' => true,
+            ]
+        ]);
+    }
 }
