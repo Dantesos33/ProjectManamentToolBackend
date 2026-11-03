@@ -1,58 +1,202 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# DeesOps API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel REST API for **DeesOps**, a multi-tenant B2B project management platform. It handles authentication, tenant isolation, and role-based access control. The React frontend lives in a separate `frontend/` folder.
 
-## About Laravel
+## Tech stack
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+| Layer | Technology |
+|---|---|
+| Framework | Laravel (PHP 8.2+) |
+| Database | MySQL (InnoDB) |
+| Authentication | Laravel Sanctum (bearer tokens) |
+| Authorization | Laravel Policies + role middleware |
+| Real-time (planned) | Laravel Reverb |
+| Testing | Pest |
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Multi-tenancy:** every company is a tenant. Users, projects, and tasks are isolated by `tenant_id` using Eloquent global scopes.
+- **Workspace registration:** registering creates a new tenant and its first user as `admin`, in a single database transaction.
+- **Workspace login:** users sign in with `domain` + `email` + `password`, so the same email can exist in different tenants.
+- **Role-based access control:** four cumulative roles (`viewer`, `developer`, `manager`, `admin`).
+- **Token auth:** hashed Sanctum tokens stored in `personal_access_tokens`, revoked on logout.
 
-## Learning Laravel
+## Roles
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Roles are cumulative: each role can do everything the one below it can.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+| Capability | Viewer | Developer | Manager | Admin |
+|---|:-:|:-:|:-:|:-:|
+| View projects and tasks | ✓ | ✓ | ✓ | ✓ |
+| Move tasks between columns | ✗ | ✓ | ✓ | ✓ |
+| Create / edit / delete projects and tasks | ✗ | ✗ | ✓ | ✓ |
+| Invite users, change roles | ✗ | ✗ | ✗ | ✓ |
+| View audit logs | ✗ | ✗ | ✗ | ✓ |
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+The role and `tenant_id` are always set by the server. They are never accepted from a request body.
 
-## Agentic Development
+## Getting started
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+### Requirements
+
+- PHP 8.2+
+- Composer
+- MySQL 8+
+- Node.js 20+ (only for the frontend)
+
+### Installation
 
 ```bash
-composer require laravel/boost --dev
+git clone <your-repo-url>
+cd <your-repo>/backend
 
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Configure your database in `.env`:
 
-## Contributing
+```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=deesops
+DB_USERNAME=root
+DB_PASSWORD=
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+FRONTEND_URL=http://localhost:5173
+SESSION_DRIVER=array
+```
 
-## Code of Conduct
+Run migrations and start the server:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```bash
+php artisan migrate
+php artisan serve
+```
 
-## Security Vulnerabilities
+The API is now available at `http://localhost:8000/api`.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### CORS
+
+In `config/cors.php`, allow the frontend origin:
+
+```php
+'paths' => ['api/*'],
+'allowed_origins' => [env('FRONTEND_URL', 'http://localhost:5173')],
+```
+
+## API reference
+
+Send `Accept: application/json` on every request, otherwise Laravel redirects on validation errors instead of returning JSON.
+
+### Auth
+
+| Method | Endpoint | Auth | Description |
+|---|---|:-:|---|
+| POST | `/api/auth/register` | No | Create a tenant and its first admin |
+| POST | `/api/auth/login` | No | Log in with domain, email, password |
+| POST | `/api/auth/logout` | Yes | Revoke the current token |
+| POST | `/api/auth/logout-all` | Yes | Revoke all of the user's tokens |
+| GET | `/api/me` | Yes | Current user |
+
+Protected routes expect `Authorization: Bearer <token>`.
+
+#### Register
+
+```http
+POST /api/auth/register
+```
+
+```json
+{
+  "company_name": "Acme Inc",
+  "domain": "acme",
+  "name": "Jane Doe",
+  "email": "jane@acme.com",
+  "password": "secret1234",
+  "password_confirmation": "secret1234"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "token": "1|abc123...",
+  "user": { "id": 1, "tenant_id": 1, "name": "Jane Doe", "email": "jane@acme.com", "role": "admin" }
+}
+```
+
+#### Login
+
+```http
+POST /api/auth/login
+```
+
+```json
+{ "domain": "acme", "email": "jane@acme.com", "password": "secret1234" }
+```
+
+Returns the same shape as register with status `200`. Wrong domain, email, or password all return the same `422` message, so workspace and account existence is not revealed.
+
+### Rate limits
+
+| Endpoint | Limit |
+|---|---|
+| Register | 5 per minute per IP |
+| Login | 10 per minute per IP |
+
+## Project structure
+
+```
+app/
+  Enums/UserRole.php
+  Http/
+    Controllers/Api/AuthController.php
+    Requests/{RegisterRequest, LoginRequest}.php
+  Models/{Tenant, User}.php
+database/migrations/
+routes/api.php
+```
+
+## Database
+
+| Table | Purpose |
+|---|---|
+| `tenants` | Companies (`name`, unique `domain`) |
+| `users` | Members of a tenant, unique on `(tenant_id, email)` |
+| `personal_access_tokens` | Sanctum tokens (hashed) |
+
+## Testing
+
+```bash
+php artisan test
+```
+
+## Roadmap
+
+- [x] Tenants and users schema
+- [x] Register (tenant + admin)
+- [x] Login (domain + email + password)
+- [x] Logout
+- [ ] Refresh tokens (httpOnly cookie, rotation, reuse detection)
+- [ ] Invitations and user management
+- [ ] Projects and tasks API with policies
+- [ ] Kanban status updates with ordering
+- [ ] Real-time updates with Laravel Reverb
+- [ ] Audit logging and admin activity feed
+
+## Security notes
+
+- Passwords are hashed through the model's `hashed` cast.
+- Tokens are stored as SHA-256 hashes and shown only once.
+- Tenant isolation is enforced at the query level with global scopes, not in the frontend.
+- Frontend role checks are for UX only. Policies are the real enforcement.
 
 ## License
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+This project is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+Built on the [Laravel](https://laravel.com) framework.
