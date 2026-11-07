@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\Api\ProjectController;
+use App\Http\Controllers\Api\TaskController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('auth')->group(function () {
@@ -17,4 +19,8 @@ Route::prefix('auth')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/auth/logout-all', [AuthController::class, 'logoutAll']);
+
+    Route::apiResource('projects', ProjectController::class);
+    Route::apiResource('projects.tasks', TaskController::class)->shallow();
+    Route::patch('tasks/{task}/status', [TaskController::class, 'updateStatus']);
 });
