@@ -138,3 +138,14 @@ it('returns dashboard stats for the current tenant only', function () {
         ]
     ]);
 });
+
+it('lists only members of the current tenant', function () {
+    $viewer = userWithRole('viewer');
+    $mate = userWithRole('developer', $viewer->tenant);
+    userWithRole('admin');   // another tenant
+
+    Sanctum::actingAs($viewer);
+
+    getJson('/api/members')->assertOk()->assertJsonCount(2, 'data')
+        ->assertJsonMissing(['email' => $mate->email]);
+});
