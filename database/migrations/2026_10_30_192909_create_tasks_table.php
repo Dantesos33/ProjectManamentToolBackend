@@ -12,21 +12,19 @@ return new class extends Migration {
     {
         Schema::create('tasks', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('project_id')->unsigned();
-            $table->bigInteger('tenant_id')->unsigned();
-            $table->string('title', 255);
+            $table->foreignId('project_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
+            $table->string('title');
             $table->text('description')->nullable();
-            $table->enum('status', ['backlog', 'todo', 'in_progress', 'completed'])->default('todo');
-            $table->enum('priority', ['low', 'medium', 'high', 'critical'])->default('medium');
-            $table->bigInteger('assigned_to')->unsigned()->nullable();
+            $table->string('status', 20)->default('todo');
+            $table->string('priority', 20)->default('medium');
+            $table->foreignId('assigned_to')->nullable()->constrained('users')->nullOnDelete();
             $table->date('due_date')->nullable();
-            $table->foreign('project_id')->references('id')->on('projects')->onDelete('cascade');
-            $table->foreign('tenant_id')->references('id')->on('tenants')->onDelete('cascade');
-            $table->foreign('assigned_to')->references('id')->on('users')->nullOnDelete();
-            $table->index('project_id');
-            $table->index('tenant_id');
-            $table->index('status');
+            $table->decimal('position', 20, 10)->default(0);   // Kanban ordering
             $table->timestamps();
+
+            $table->index(['tenant_id', 'status']);
+            $table->index(['project_id', 'status', 'position']);   // the board query
         });
     }
 

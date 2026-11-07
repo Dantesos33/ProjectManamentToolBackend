@@ -12,14 +12,13 @@ return new class extends Migration {
     {
         Schema::create('projects', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('tenant_id')->unsigned();
-            $table->string('name', 255);
+            $table->foreignId('tenant_id')->constrained()->cascadeOnDelete();
+            $table->string('name');
             $table->text('description')->nullable();
-            $table->bigInteger('created_by')->unsigned();
-            $table->foreign('tenant_id')->references('id')->on('tenants')->onDelete('cascade');
-            $table->foreign('created_by')->references('id')->on('users')->onDelete('restrict');
-            $table->index('tenant_id');
+            $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
             $table->timestamps();
+
+            $table->index(['tenant_id', 'created_at']);
         });
     }
 
