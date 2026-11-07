@@ -26,6 +26,11 @@ class User extends Authenticatable
         ];
     }
 
+    public function atLeast(UserRole $role): bool
+    {
+        return $this->role->atLeast($role);
+    }
+
     public function tenant(): BelongsTo
     {
         return $this->belongsTo(Tenant::class);
