@@ -117,3 +117,24 @@ it('ignores tenant_id and created_by sent by the client', function () {
     expect($project->tenant_id)->toBe($manager->tenant_id)
         ->and($project->created_by)->toBe($manager->id);
 });
+
+it('returns dashboard stats for the current tenant only', function () {
+    $a = userWithRole('viewer');
+    $b = userWithRole('manager');
+    $projectA = projectFor($a);
+
+    Task::factory()->create(['project_id' => $projectA->id, 'status' => 'todo', 'due_date' => now()->subDay()]);
+    Task::factory()->create(['project_id' => $projectA->id, 'status' => 'completed', 'due_date' => now()->subDay()]);
+    Task::factory()->create(['project_id' => projectFor($b)->id]);   // other tenant
+
+    Sanctum::actingAs($a);
+
+    getJson('/api/dashboard/stats')->assertOk()->assertJson([
+        'data' => [
+            'projects' => 1,
+            'open_tasks' => 1,
+            'completed_tasks' => 1,
+            'overdue_tasks' => 1,
+        ]
+    ]);
+});
