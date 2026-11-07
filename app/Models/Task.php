@@ -14,6 +14,11 @@ class Task extends Model
     use BelongsToTenant, HasFactory;
 
     // project_id is set through the relationship, never from the request
+    protected $attributes = [
+        'status' => 'todo',
+        'priority' => 'medium',
+    ];
+
     protected $fillable = [
         'title',
         'description',
