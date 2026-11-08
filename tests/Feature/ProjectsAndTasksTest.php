@@ -5,6 +5,8 @@ use App\Models\Task;
 use App\Models\Tenant;
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
+use App\Events\TaskChanged;
+use Illuminate\Support\Facades\Event;
 
 use function Pest\Laravel\deleteJson;
 use function Pest\Laravel\getJson;
@@ -148,4 +150,46 @@ it('lists only members of the current tenant', function () {
 
     getJson('/api/members')->assertOk()->assertJsonCount(2, 'data')
         ->assertJsonMissing(['email' => $mate->email]);
+});
+
+it('broadcasts a moved task to its own tenant channel', function () {
+    Event::fake([TaskChanged::class]);
+    $dev = userWithRole('developer');
+    $task = Task::factory()->create(['project_id' => projectFor($dev)->id, 'status' => 'todo']);
+
+    Sanctum::actingAs($dev);
+    patchJson("/api/tasks/{$task->id}/status", ['status' => 'in_progress', 'position' => 2])->assertOk();
+
+    Event::assertDispatched(
+        TaskChanged::class,
+        fn(TaskChanged $e) =>
+            $e->action === 'moved'
+            && $e->taskId === $task->id
+            && $e->task['status'] === 'in_progress'
+            && $e->broadcastOn()[0]->name === "private-tenant.{$dev->tenant_id}"
+    );
+});
+
+it('does not broadcast a rejected change', function () {
+    Event::fake([TaskChanged::class]);
+    $viewer = userWithRole('viewer');
+    $task = Task::factory()->create(['project_id' => projectFor($viewer)->id]);
+
+    Sanctum::actingAs($viewer);
+    patchJson("/api/tasks/{$task->id}/status", ['status' => 'completed', 'position' => 1])->assertForbidden();
+
+    Event::assertNotDispatched(TaskChanged::class);
+});
+
+it('broadcasts created and deleted tasks', function () {
+    Event::fake([TaskChanged::class]);
+    $manager = userWithRole('manager');
+    $project = projectFor($manager);
+
+    Sanctum::actingAs($manager);
+    $id = postJson("/api/projects/{$project->id}/tasks", ['title' => 'New'])->assertCreated()->json('data.id');
+    deleteJson("/api/tasks/{$id}")->assertNoContent();
+
+    Event::assertDispatched(TaskChanged::class, fn($e) => $e->action === 'created' && $e->taskId === $id);
+    Event::assertDispatched(TaskChanged::class, fn($e) => $e->action === 'deleted' && $e->task === null);
 });

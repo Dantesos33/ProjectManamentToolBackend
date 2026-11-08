@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Support\Realtime;
 use App\Enums\TaskStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreTaskRequest;
@@ -38,6 +39,7 @@ class TaskController extends Controller
         $data['position'] = (float) $project->tasks()->where('status', $data['status'])->max('position') + 1;
 
         $task = $project->tasks()->create($data);   // tenant_id is stamped by the trait
+        Realtime::task('created', $task);
 
         return new TaskResource($task->load('assignee:id,name'));
     }
@@ -52,6 +54,7 @@ class TaskController extends Controller
     public function update(UpdateTaskRequest $request, Task $task)
     {
         $task->update($request->validated());
+        Realtime::task('updated', $task);
 
         return new TaskResource($task->load('assignee:id,name'));
     }
@@ -60,6 +63,7 @@ class TaskController extends Controller
     public function updateStatus(UpdateTaskStatusRequest $request, Task $task)
     {
         $task->update($request->validated());
+        Realtime::task('moved', $task);
 
         // Week 5: broadcast(new TaskStatusUpdated($task))->toOthers();
 
@@ -71,6 +75,7 @@ class TaskController extends Controller
         $this->authorize('delete', $task);
 
         $task->delete();
+        Realtime::task('deleted', $task);
 
         return response()->noContent();
     }
