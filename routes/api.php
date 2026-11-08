@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\TaskController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\MemberController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AuditLogController;
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
@@ -28,4 +29,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/dashboard/stats', DashboardController::class);
     Route::get('/members', MemberController::class);
+
+    Route::get('/audit-logs', [AuditLogController::class, 'index']);
 });

@@ -1,5 +1,7 @@
 <?php
 
+use App\Events\AuditLogged;
+use App\Models\AuditLog;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\Tenant;
@@ -192,4 +194,79 @@ it('broadcasts created and deleted tasks', function () {
 
     Event::assertDispatched(TaskChanged::class, fn($e) => $e->action === 'created' && $e->taskId === $id);
     Event::assertDispatched(TaskChanged::class, fn($e) => $e->action === 'deleted' && $e->task === null);
+});
+
+it('records audit entries for task changes', function () {
+    $manager = userWithRole('manager');
+    $project = projectFor($manager);   // created before login, so it isn't logged
+    Sanctum::actingAs($manager);
+
+    $id = postJson("/api/projects/{$project->id}/tasks", ['title' => 'Ship it'])->assertCreated()->json('data.id');
+    patchJson("/api/tasks/{$id}/status", ['status' => 'in_progress', 'position' => 5])->assertOk();
+    deleteJson("/api/tasks/{$id}")->assertNoContent();
+
+    $logs = AuditLog::where('auditable_type', 'task')->where('auditable_id', $id)->orderBy('id')->get();
+
+    expect($logs->pluck('action')->all())->toBe(['task.created', 'task.updated', 'task.deleted'])
+        ->and($logs[1]->old_values)->toBe(['status' => 'todo'])
+        ->and($logs[1]->new_values)->toBe(['status' => 'in_progress'])   // position is excluded
+        ->and($logs[1]->user_id)->toBe($manager->id)
+        ->and($logs[1]->tenant_id)->toBe($manager->tenant_id);
+});
+
+it('does not log a reorder inside the same column', function () {
+    $dev = userWithRole('developer');
+    $task = Task::factory()->create(['project_id' => projectFor($dev)->id, 'status' => 'todo']);
+
+    Sanctum::actingAs($dev);
+    patchJson("/api/tasks/{$task->id}/status", ['status' => 'todo', 'position' => 99])->assertOk();
+
+    expect(AuditLog::count())->toBe(0);
+});
+
+it('lets only admins read the audit log', function () {
+    foreach (['viewer', 'developer', 'manager'] as $role) {
+        Sanctum::actingAs(userWithRole($role));
+        getJson('/api/audit-logs')->assertForbidden();
+    }
+
+    Sanctum::actingAs(userWithRole('admin'));
+    getJson('/api/audit-logs')->assertOk();
+});
+
+it('shows an admin only their own tenants entries', function () {
+    $adminA = userWithRole('admin');
+    $managerB = userWithRole('manager');
+    $projectB = projectFor($managerB);
+
+    Sanctum::actingAs($managerB);
+    postJson("/api/projects/{$projectB->id}/tasks", ['title' => 'Secret'])->assertCreated();
+
+    Sanctum::actingAs($adminA);
+    getJson('/api/audit-logs')->assertOk()->assertJsonCount(0, 'data');
+});
+
+it('keeps audit entries append-only', function () {
+    Sanctum::actingAs(userWithRole('manager'));
+    postJson('/api/projects', ['name' => 'P'])->assertCreated();
+
+    $log = AuditLog::firstOrFail();
+
+    expect($log->update(['description' => 'tampered']))->toBeFalse()
+        ->and($log->delete())->toBeFalse();
+});
+
+it('broadcasts every audit entry to the admin channel only', function () {
+    Event::fake([AuditLogged::class]);
+    $manager = userWithRole('manager');
+    Sanctum::actingAs($manager);
+
+    postJson('/api/projects', ['name' => 'Alpha'])->assertCreated();
+
+    Event::assertDispatched(
+        AuditLogged::class,
+        fn(AuditLogged $e) =>
+            $e->tenantId === $manager->tenant_id
+            && $e->broadcastOn()[0]->name === "private-tenant.{$manager->tenant_id}.admin"
+    );
 });
