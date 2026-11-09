@@ -15,7 +15,7 @@ class AuditLogController extends Controller
         $this->authorize('viewAny', AuditLog::class);
 
         $filters = $request->validate([
-            'entity' => ['nullable', Rule::in(['task', 'project'])],
+            'entity' => ['nullable', Rule::in(['task', 'project', 'user', 'invitation'])],
             'event' => ['nullable', Rule::in(['created', 'updated', 'deleted'])],
             'user_id' => ['nullable', 'integer'],
         ]);

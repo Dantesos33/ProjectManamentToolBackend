@@ -9,12 +9,14 @@ use App\Http\Requests\RegisterRequest;
 use App\Models\RefreshToken;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\Invitation;
 use App\Services\AuthTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rules\Password;
 
 class AuthController extends Controller
 {
@@ -167,5 +169,75 @@ class AuthController extends Controller
             'email' => $user->email,
             'role' => $user->role->value,
         ];
+    }
+
+    public function previewInvitation(Request $request)
+    {
+        $data = $request->validate(['token' => ['required', 'string']]);
+
+        $invitation = $this->findPendingInvitation($data['token']);
+
+        if (!$invitation) {
+            return response()->json(['message' => 'This invitation is invalid or has expired.'], 404);
+        }
+
+        return response()->json([
+            'data' => [
+                'email' => $invitation->email,
+                'role' => $invitation->role->value,
+                'company' => $invitation->tenant->name,
+                'expires_at' => $invitation->expires_at,
+            ]
+        ]);
+    }
+
+    public function acceptInvite(Request $request)
+    {
+        // Only these fields are read. Email, role and tenant come from the invitation row.
+        $data = $request->validate([
+            'token' => ['required', 'string'],
+            'name' => ['required', 'string', 'max:255'],
+            'password' => ['required', 'confirmed', Password::min(8)],
+        ]);
+
+        $user = DB::transaction(function () use ($data) {
+            $invitation = $this->findPendingInvitation($data['token'], lock: true);
+
+            if (!$invitation) {
+                throw ValidationException::withMessages(['token' => ['This invitation is invalid or has expired.']]);
+            }
+
+            $alreadyMember = User::where('tenant_id', $invitation->tenant_id)
+                ->where('email', $invitation->email)->exists();
+
+            if ($alreadyMember) {
+                throw ValidationException::withMessages(['token' => ['You are already a member of this workspace.']]);
+            }
+
+            $user = User::create([
+                'tenant_id' => $invitation->tenant_id,
+                'role' => $invitation->role,
+                'name' => $data['name'],
+                'email' => $invitation->email,
+                'password' => $data['password'],
+            ]);
+
+            $invitation->update(['accepted_at' => now()]);   // single use
+
+            return $user;
+        });
+
+        return $this->startSession($user, $request, 201);   // logged in right away
+    }
+
+    private function findPendingInvitation(string $token, bool $lock = false): ?Invitation
+    {
+        return Invitation::withoutGlobalScopes()   // nobody is logged in here, so be explicit
+            ->with('tenant')
+            ->where('token_hash', hash('sha256', $token))
+            ->whereNull('accepted_at')
+            ->where('expires_at', '>', now())
+            ->when($lock, fn($q) => $q->lockForUpdate())
+            ->first();
     }
 }
