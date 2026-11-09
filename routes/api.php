@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuditLogController;
 use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\NotificationController;
 
 Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
@@ -43,4 +44,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', [UserController::class, 'index']);
     Route::patch('/users/{id}', [UserController::class, 'update'])->whereNumber('id');
     Route::delete('/users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
+
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 });

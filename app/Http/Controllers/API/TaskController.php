@@ -12,6 +12,10 @@ use App\Http\Resources\TaskResource;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\Request;
+use App\Events\UserNotified;
+use App\Models\User;
+use App\Notifications\TaskAssigned;
+
 
 class TaskController extends Controller
 {
@@ -40,6 +44,7 @@ class TaskController extends Controller
 
         $task = $project->tasks()->create($data);   // tenant_id is stamped by the trait
         Realtime::task('created', $task);
+        $this->notifyAssignee($task, $request->user());
 
         return new TaskResource($task->load('assignee:id,name'));
     }
@@ -55,6 +60,9 @@ class TaskController extends Controller
     {
         $task->update($request->validated());
         Realtime::task('updated', $task);
+        if ($task->wasChanged('assigned_to')) {          // only when the assignee actually changed
+            $this->notifyAssignee($task, $request->user());
+        }
 
         return new TaskResource($task->load('assignee:id,name'));
     }
@@ -78,5 +86,25 @@ class TaskController extends Controller
         Realtime::task('deleted', $task);
 
         return response()->noContent();
+    }
+
+    private function notifyAssignee(Task $task, User $actor): void
+    {
+        // Nobody to tell, or you assigned the task to yourself
+        if (!$task->assigned_to || $task->assigned_to === $actor->id) {
+            return;
+        }
+
+        $assignee = User::where('tenant_id', $task->tenant_id)->find($task->assigned_to);
+        if (!$assignee) {
+            return;
+        }
+
+        try {
+            $assignee->notify(new TaskAssigned($task, $actor));
+            event(new UserNotified($assignee->id));
+        } catch (\Throwable $e) {
+            report($e);   // a failed notification must never fail the assignment
+        }
     }
 }

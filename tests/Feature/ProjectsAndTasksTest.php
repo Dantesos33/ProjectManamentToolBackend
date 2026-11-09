@@ -9,6 +9,7 @@ use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use App\Events\TaskChanged;
 use Illuminate\Support\Facades\Event;
+use App\Events\UserNotified;
 
 use function Pest\Laravel\deleteJson;
 use function Pest\Laravel\getJson;
@@ -269,4 +270,55 @@ it('broadcasts every audit entry to the admin channel only', function () {
             $e->tenantId === $manager->tenant_id
             && $e->broadcastOn()[0]->name === "private-tenant.{$manager->tenant_id}.admin"
     );
+});
+
+it('notifies a user when a task is assigned to them', function () {
+    Event::fake([UserNotified::class]);
+    $manager = userWithRole('manager');
+    $dev = userWithRole('developer', $manager->tenant);
+    $project = projectFor($manager);
+
+    Sanctum::actingAs($manager);
+    postJson("/api/projects/{$project->id}/tasks", ['title' => 'Fix login', 'assigned_to' => $dev->id])->assertCreated();
+
+    expect($dev->notifications()->count())->toBe(1)
+        ->and($dev->notifications()->first()->data['title'])->toBe('Fix login');
+    Event::assertDispatched(UserNotified::class, fn(UserNotified $e) => $e->userId === $dev->id);
+});
+
+it('only notifies when the assignee actually changes, and never for self-assignment', function () {
+    $manager = userWithRole('manager');
+    $dev = userWithRole('developer', $manager->tenant);
+    $task = Task::factory()->create(['project_id' => projectFor($manager)->id, 'assigned_to' => $dev->id]);
+
+    Sanctum::actingAs($manager);
+
+    patchJson("/api/tasks/{$task->id}", ['title' => 'Renamed'])->assertOk();
+    expect($dev->notifications()->count())->toBe(0);
+
+    patchJson("/api/tasks/{$task->id}", ['assigned_to' => $manager->id])->assertOk();
+    expect($manager->notifications()->count())->toBe(0);
+
+    patchJson("/api/tasks/{$task->id}", ['assigned_to' => $dev->id])->assertOk();
+    expect($dev->notifications()->count())->toBe(1);
+});
+
+it('only lets users read and mark their own notifications', function () {
+    $manager = userWithRole('manager');
+    $dev = userWithRole('developer', $manager->tenant);
+    $other = userWithRole('developer', $manager->tenant);
+    $project = projectFor($manager);
+
+    Sanctum::actingAs($manager);
+    postJson("/api/projects/{$project->id}/tasks", ['title' => 'Mine', 'assigned_to' => $dev->id])->assertCreated();
+    $id = $dev->notifications()->first()->id;
+
+    Sanctum::actingAs($other);
+    getJson('/api/notifications')->assertOk()->assertJsonCount(0, 'data')->assertJsonPath('unread_count', 0);
+    postJson("/api/notifications/{$id}/read")->assertNotFound();
+
+    Sanctum::actingAs($dev);
+    getJson('/api/notifications')->assertJsonPath('unread_count', 1);
+    postJson("/api/notifications/{$id}/read")->assertNoContent();
+    getJson('/api/notifications')->assertJsonPath('unread_count', 0);
 });

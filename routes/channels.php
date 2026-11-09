@@ -13,3 +13,8 @@ Broadcast::channel('tenant.{tenantId}', function (User $user, string $tenantId) 
 Broadcast::channel('tenant.{tenantId}.admin', function (User $user, string $tenantId) {
     return (int) $user->tenant_id === (int) $tenantId && $user->role === UserRole::Admin;
 });
+
+// Each user hears only their own notifications
+Broadcast::channel('user.{userId}', function (User $user, string $userId) {
+    return (int) $user->id === (int) $userId;
+});
